@@ -15,13 +15,14 @@
 - 封面保存；
 - 可用字幕自动保存为 SRT；
 - SQLite 任务历史和状态记录；
+- GUI 一键载入未完成任务；
 - 7 项 URL、媒体、元数据和路由测试。
 
 ## 暂未完成
 
-- GUI 中的任务历史和恢复按钮；
+- GUI 中的完整任务历史列表；
 - 弹幕下载和格式转换；
-- 完整的 Bilibili Parser 类独立化（当前 API 类仍在 `main.py`，共享模块已建立）；
+- 完整的 Bilibili Parser 类独立化（当前 API 类仍在 `main.py`，共享 URL/媒体模块已建立）；
 - 多平台解析器；
 - Windows 最终打包脚本。
 
@@ -32,4 +33,3 @@
 $files = @('main.py') + (Get-ChildItem app,tests -Recurse -Filter *.py | ForEach-Object { $_.FullName })
 .\.venv\Scripts\python.exe -m py_compile $files
 ```
-
