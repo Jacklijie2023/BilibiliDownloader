@@ -1,8 +1,7 @@
 # Bilibili 批量视频下载器
 
 一个基于 Tkinter 的 Windows 桌面下载工具。输入一批 Bilibili 视频链接后，程序会优先调用官方 API 获取视频信息和媒体直链，再使用 FFmpeg 无损合并为 MP4。
-<img width="1920" height="1015" alt="Snipaste_2026-09-01_00-34-57" src="https://github.com/user-attachments/assets/32e88cae-c921-4d7f-95e6-b33bc5600ffe" />
-
+<img width="1918" height="1014" alt="Snipaste_2026-09-01_00-34-57" src="https://github.com/user-attachments/assets/e6c3bed2-4e65-42cf-862e-f55dff06e8f5" />
 
 ## 功能概览
 
