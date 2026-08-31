@@ -20,6 +20,7 @@
 - 独立 `app/parsers/bilibili.py` 官方 API 客户端；
 - 可用弹幕 XML 自动保存；
 - `build.ps1` Windows PyInstaller 打包脚本；
+- 已在 Windows 11 / Python 3.12 环境成功生成 `dist/BilibiliDownloader`；
 - 7 项 URL、媒体、元数据和路由测试。
 
 ## 暂未完成
@@ -27,7 +28,7 @@
 - 弹幕格式转换（当前保存原始 XML）；
 - 清理 `main.py` 中已废弃的旧 API 类定义（当前由兼容层保留）；
 - 多平台解析器；
-- 在全新 Windows 环境执行最终打包验收。
+- 在全新、无 Python 环境的 Windows 电脑执行最终启动和下载验收；
 
 ## 当前验证命令
 
