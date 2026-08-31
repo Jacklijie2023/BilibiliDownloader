@@ -7,6 +7,10 @@ import urllib.parse
 
 import requests
 
+from app.models import VideoInfo
+from app.url_parser import parse_video_url, canonicalize_bilibili_url
+from .base import PlatformParser, ParserError
+
 
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -193,3 +197,55 @@ class BilibiliApiClient:
             self.log(f"danmaku skipped: {exc}")
             return False
 
+
+class BilibiliParser(PlatformParser):
+    """URL parser backed by :class:`BilibiliApiClient`.
+
+    The parser is deliberately thin: network access happens only when
+    ``parse`` is called, while ``can_handle`` remains safe for URL previews.
+    """
+
+    platform = "bilibili"
+
+    def __init__(self, client: BilibiliApiClient | None = None):
+        self.client = client
+
+    def can_handle(self, url: str) -> bool:
+        parsed = urllib.parse.urlparse(str(url))
+        host = (parsed.hostname or "").lower()
+        if host and not (host == "bilibili.com" or host.endswith(".bilibili.com")):
+            return False
+        bvid, aid, _ = parse_video_url(str(url))
+        return bool(bvid or aid)
+
+    def parse(self, url: str, **kwargs: Any) -> VideoInfo:
+        bvid, aid, page = parse_video_url(url)
+        if not (bvid or aid):
+            raise ParserError("URL does not contain a Bilibili BV/AV identifier")
+        client = self.client or BilibiliApiClient(**kwargs)
+        payload = client.get_view(bvid=bvid, aid=aid)
+        pages = payload.get("pages") or []
+        if not pages or page > len(pages):
+            raise ParserError(f"invalid page number: {page}")
+        page_info = pages[page - 1]
+        resolved_aid = payload.get("aid") or aid
+        resolved_bvid = payload.get("bvid") or bvid
+        return VideoInfo(
+            platform=self.platform,
+            bvid=resolved_bvid,
+            aid=resolved_aid,
+            cid=page_info.get("cid") or payload.get("cid") or 0,
+            title=str(payload.get("title") or "video"),
+            uploader=str((payload.get("owner") or {}).get("name") or "unknown"),
+            uploader_id=(payload.get("owner") or {}).get("mid"),
+            page_number=page,
+            page_count=len(pages),
+            page_title=str(page_info.get("part") or ""),
+            duration=int(page_info.get("duration") or payload.get("duration") or 0),
+            cover_url=payload.get("pic"),
+            description=str(payload.get("desc") or ""),
+            pubdate=payload.get("pubdate"),
+            original_url=url,
+            canonical_url=canonicalize_bilibili_url(url),
+            extra={"raw": payload},
+        )

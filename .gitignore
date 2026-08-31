@@ -3,10 +3,12 @@ __pycache__/
 *.py[cod]
 .idea/
 downloads/
-ffmpeg/
+ffmpeg/*
+!ffmpeg/README.md
 *.tmp
 cookies.txt
 cookies*.txt
+!cookies.txt.example
 urls.txt
 *.mp4
 *.m4s
@@ -17,3 +19,6 @@ urls.txt
 *.db
 build/
 dist/
+
+# Internal planning notes (the public status/release docs are tracked).
+扩展功能清单.txt

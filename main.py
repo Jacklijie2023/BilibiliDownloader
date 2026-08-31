@@ -17,7 +17,11 @@ import requests
 import yt_dlp
 
 from app.models import VideoInfo
-from app.metadata.writer import save_subtitle_tracks, save_video_metadata
+from app.metadata.writer import (
+    convert_danmaku_xml_to_ass,
+    save_subtitle_tracks,
+    save_video_metadata,
+)
 from app.jobs.store import TaskStore
 from app.parsers.bilibili import BilibiliApiClient
 from app.url_parser import (
@@ -178,7 +182,7 @@ select_dash_streams = shared_select_dash_streams
 stream_urls = shared_stream_urls
 
 
-def select_dash_streams(dash, max_height):
+def _legacy_select_dash_streams(dash, max_height):
     """挑选画质不超过 max_height 的最佳视频流，以及码率最高的音频流。"""
 
     videos = [
@@ -224,7 +228,7 @@ def select_dash_streams(dash, max_height):
     return video, audio
 
 
-def stream_urls(stream):
+def _legacy_stream_urls(stream):
     """直链 + 备用镜像，按顺序返回。"""
 
     urls = []
@@ -245,11 +249,17 @@ def stream_urls(stream):
     return list(dict.fromkeys(u for u in urls if u))
 
 
+# Public helpers are provided by app.media.resolver; retain private legacy
+# implementations above only for source compatibility with old stack traces.
+select_dash_streams = shared_select_dash_streams
+stream_urls = shared_stream_urls
+
+
 # ============================================================
 # Bilibili Web API
 # ============================================================
 
-class BilibiliWebApi:
+class _LegacyBilibiliWebApi:
     """直接调用官方 Web 接口获取视频信息与播放直链。
 
     为什么不再依赖网页：
@@ -504,6 +514,11 @@ class BilibiliWebApi:
 # ============================================================
 # Bilibili 下载器
 # ============================================================
+
+# The API implementation moved to ``app.parsers.bilibili``. Keep the legacy
+# name available for callers importing it from ``main``.
+BilibiliWebApi = BilibiliApiClient
+
 
 class BilibiliDownloader:
 
@@ -922,6 +937,14 @@ class BilibiliDownloader:
         danmaku_path = output_path.with_suffix(".xml")
         if self.api.download_danmaku(page_info["cid"], danmaku_path):
             self.log(f"danmaku saved: {danmaku_path.name}")
+            # Keep the original XML for lossless re-processing and provide a
+            # player-friendly ASS rendition as an optional sidecar artifact.
+            try:
+                ass_path = output_path.with_suffix(".danmaku.ass")
+                convert_danmaku_xml_to_ass(danmaku_path, ass_path)
+                self.log(f"danmaku converted: {ass_path.name}")
+            except Exception as exc:
+                self.log(f"danmaku conversion skipped: {exc}")
         self._embed_metadata(output_path, video_info)
 
         self.log(
@@ -1189,6 +1212,12 @@ class BilibiliDownloader:
             f"Bilibili {video_info.bvid or ('av' + str(video_info.aid))} "
             f"p{video_info.page_number} | {video_info.canonical_url}"
         )
+        date_value = ""
+        if video_info.pubdate:
+            try:
+                date_value = time.strftime("%Y-%m-%d", time.localtime(int(video_info.pubdate)))
+            except (TypeError, ValueError, OverflowError):
+                date_value = str(video_info.pubdate)
         try:
             self._run_ffmpeg(
                 [
@@ -1198,6 +1227,7 @@ class BilibiliDownloader:
                     "-metadata", f"title={video_info.title}",
                     "-metadata", f"artist={video_info.uploader}",
                     "-metadata", "album=Bilibili",
+                    "-metadata", f"date={date_value}",
                     "-metadata", f"comment={comment}",
                     "-metadata", f"description={video_info.description}",
                     str(temp_path),

@@ -21,5 +21,5 @@ class VideoInfo:
     tags: list[str] = field(default_factory=list)
     original_url: str = ""
     canonical_url: str = ""
+    subtitles: list[dict[str, Any]] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
-

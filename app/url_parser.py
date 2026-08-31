@@ -5,13 +5,17 @@ import urllib.parse
 def parse_video_url(url: str) -> tuple[str | None, int | None, int]:
     """Extract BVID/AID and page number from a Bilibili URL."""
 
+    url = str(url or "").strip()
     bvid = None
     aid = None
-    match = re.search(r"/video/(BV[0-9A-Za-z]{8,12})", url, re.IGNORECASE)
+    # BVIDs are currently 12 characters, but accepting the complete
+    # alphanumeric path segment keeps this parser forward compatible with
+    # future identifier lengths and test fixtures using shortened IDs.
+    match = re.search(r"/video/(BV[0-9A-Za-z]+)(?:[/?#]|$)", url, re.IGNORECASE)
     if match:
-        bvid = match.group(1)
+        bvid = "BV" + match.group(1)[2:]
     else:
-        match = re.search(r"/video/av(\d+)", url, re.IGNORECASE)
+        match = re.search(r"/video/av(\d+)(?:[/?#]|$)", url, re.IGNORECASE)
         if match:
             aid = int(match.group(1))
 
@@ -32,4 +36,3 @@ def canonicalize_bilibili_url(url: str) -> str:
     else:
         return url
     return f"{base}?p={page}" if page > 1 else base
-

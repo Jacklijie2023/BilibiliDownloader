@@ -4,7 +4,10 @@ import unittest
 from pathlib import Path
 
 from app.metadata.writer import (
+    convert_danmaku_xml_to_ass,
+    convert_danmaku_xml_to_srt,
     metadata_paths,
+    parse_danmaku_xml,
     save_subtitle_tracks,
     save_video_metadata,
 )
@@ -12,6 +15,7 @@ from app.models import VideoInfo
 from app.url_parser import canonicalize_bilibili_url, parse_video_url
 from app.media.resolver import select_dash_streams, stream_urls
 from app.jobs.store import TaskStore
+from app.parsers import BilibiliParser, detect_platform
 import main
 
 
@@ -57,6 +61,15 @@ class StreamResolverTests(unittest.TestCase):
 
 
 class MetadataTests(unittest.TestCase):
+    def test_danmaku_xml_converts_to_ass_and_srt(self):
+        xml = b'<i><d p="2.5,1">hello &amp; world</d><d p="1,4">bottom</d></i>'
+        self.assertEqual(parse_danmaku_xml(xml)[0]["text"], "bottom")
+        with tempfile.TemporaryDirectory() as temp:
+            ass = convert_danmaku_xml_to_ass(xml, Path(temp) / "x.ass")
+            srt = convert_danmaku_xml_to_srt(xml, Path(temp) / "x.srt")
+            self.assertIn("[Events]", ass.read_text())
+            self.assertIn("00:00:01,000 --> 00:00:06,000", srt.read_text())
+
     def test_json_and_cover_are_written(self):
         class FakeResponse:
             headers = {"Content-Type": "image/jpeg"}
@@ -146,6 +159,28 @@ class TaskStoreTests(unittest.TestCase):
             store.upsert("https://example/video", "1080P", "COMPLETED")
             self.assertEqual(store.pending(), [])
             self.assertEqual(store.recent(1)[0]["status"], "COMPLETED")
+
+
+class ParserRegistryTests(unittest.TestCase):
+    def test_bilibili_parser_detection_is_platform_specific(self):
+        parser = BilibiliParser(client=object())
+        self.assertTrue(parser.can_handle("https://www.bilibili.com/video/BV1kkArz1EXq"))
+        self.assertFalse(parser.can_handle("https://www.youtube.com/video/BV1kkArz1EXq"))
+        self.assertEqual(detect_platform("https://www.bilibili.com/video/BV1kkArz1EXq"), "bilibili")
+
+    def test_bilibili_parser_normalizes_api_payload(self):
+        class FakeClient:
+            def get_view(self, **kwargs):
+                return {
+                    "aid": 7, "bvid": "BV1abc", "title": "Demo",
+                    "owner": {"name": "UP", "mid": 9},
+                    "pages": [{"cid": 8, "part": "Part", "duration": 12}],
+                }
+
+        info = BilibiliParser(client=FakeClient()).parse(
+            "https://www.bilibili.com/video/BV1abc"
+        )
+        self.assertEqual((info.aid, info.cid, info.page_title), (7, 8, "Part"))
 
 
 if __name__ == "__main__":
