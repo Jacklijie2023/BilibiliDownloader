@@ -29,6 +29,10 @@ class TaskStore:
         connection = self._connect()
         try:
             yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
         finally:
             connection.close()
 
@@ -92,7 +96,7 @@ class TaskStore:
 
     def recent(self, limit: int = 100):
         limit = max(1, min(int(limit), 500))
-        with self._lock, self._connect() as db:
+        with self._lock, self._database() as db:
             rows = db.execute(
                 "SELECT * FROM download_tasks "
                 "ORDER BY updated_at DESC LIMIT ?", (limit,)
