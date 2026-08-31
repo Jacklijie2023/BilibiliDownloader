@@ -16,6 +16,9 @@ from tkinter import ttk, filedialog, messagebox
 import requests
 import yt_dlp
 
+from app.models import VideoInfo
+from app.metadata.writer import save_video_metadata
+
 
 # ============================================================
 # 项目路径
@@ -756,6 +759,25 @@ class BilibiliDownloader:
         aid = info.get("aid") or aid
         bvid = info.get("bvid") or bvid or f"av{aid}"
 
+        video_info = VideoInfo(
+            platform="bilibili",
+            bvid=bvid if str(bvid).upper().startswith("BV") else None,
+            aid=aid,
+            cid=page_info.get("cid") or info.get("cid") or 0,
+            title=str(info.get("title") or "video"),
+            uploader=str((info.get("owner") or {}).get("name") or "unknown"),
+            uploader_id=(info.get("owner") or {}).get("mid"),
+            page_number=page,
+            page_count=len(pages),
+            page_title=str(page_info.get("part") or ""),
+            duration=int(page_info.get("duration") or info.get("duration") or 0),
+            cover_url=info.get("pic"),
+            description=str(info.get("desc") or ""),
+            pubdate=info.get("pubdate"),
+            original_url=url,
+            canonical_url=canonicalize_bilibili_url(url),
+        )
+
         uploader = sanitize_filename((info.get("owner") or {}).get("name"), 40)
         title = sanitize_filename(info.get("title"), 60)
         part = sanitize_filename(page_info.get("part"), 50)
@@ -838,6 +860,21 @@ class BilibiliDownloader:
 
         for temp in (temp_video, temp_audio):
             temp.unlink(missing_ok=True)
+
+        # Metadata and cover are sidecar artifacts. They are best effort and
+        # must not turn a valid media download into a failed task.
+        metadata_json, cover_path = save_video_metadata(
+            output_path,
+            video_info,
+            self.quality,
+            play,
+            session=self.api.session,
+            headers=API_HEADERS,
+        )
+        self.log(f"metadata saved: {metadata_json.name}")
+        if cover_path:
+            self.log(f"cover saved: {cover_path.name}")
+        self._embed_metadata(output_path, video_info)
 
         self.log(
             f"✓ 下载完成：{output_path.name}"
@@ -1093,6 +1130,36 @@ class BilibiliDownloader:
             ],
             output_path
         )
+
+    def _embed_metadata(self, output_path, video_info):
+        """Write descriptive MP4 tags without re-encoding the streams."""
+
+        temp_path = output_path.with_name(
+            output_path.stem + ".metadata.tmp.mp4"
+        )
+        comment = (
+            f"Bilibili {video_info.bvid or ('av' + str(video_info.aid))} "
+            f"p{video_info.page_number} | {video_info.canonical_url}"
+        )
+        try:
+            self._run_ffmpeg(
+                [
+                    "-i", str(output_path),
+                    "-map", "0",
+                    "-c", "copy",
+                    "-metadata", f"title={video_info.title}",
+                    "-metadata", f"artist={video_info.uploader}",
+                    "-metadata", "album=Bilibili",
+                    "-metadata", f"comment={comment}",
+                    "-metadata", f"description={video_info.description}",
+                    str(temp_path),
+                ],
+                temp_path,
+            )
+            os.replace(temp_path, output_path)
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            self.log(f"metadata embedding skipped: {exc}")
 
     # ========================================================
     # yt-dlp 兜底通道
