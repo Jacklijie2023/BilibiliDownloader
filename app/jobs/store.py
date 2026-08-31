@@ -2,6 +2,7 @@ import hashlib
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -23,8 +24,16 @@ class TaskStore:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextmanager
+    def _database(self):
+        connection = self._connect()
+        try:
+            yield connection
+        finally:
+            connection.close()
+
     def _initialize(self):
-        with self._lock, self._connect() as db:
+        with self._lock, self._database() as db:
             db.execute(
                 """
                 CREATE TABLE IF NOT EXISTS download_tasks (
@@ -45,7 +54,7 @@ class TaskStore:
         now = int(time.time())
         output_path = fields.get("output_path")
         error_message = fields.get("error_message")
-        with self._lock, self._connect() as db:
+        with self._lock, self._database() as db:
             db.execute(
                 """
                 INSERT INTO download_tasks
@@ -64,14 +73,14 @@ class TaskStore:
         return task_id
 
     def get(self, task_id: str):
-        with self._lock, self._connect() as db:
+        with self._lock, self._database() as db:
             row = db.execute(
                 "SELECT * FROM download_tasks WHERE id = ?", (task_id,)
             ).fetchone()
         return dict(row) if row else None
 
     def pending(self):
-        with self._lock, self._connect() as db:
+        with self._lock, self._database() as db:
             rows = db.execute(
                 """
                 SELECT * FROM download_tasks
