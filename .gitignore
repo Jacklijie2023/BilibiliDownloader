@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.idea/
+downloads/
+*.tmp
+cookies.txt
+cookies*.txt
+urls.txt
+*.mp4
+*.m4s
+*.jpg
+*.json
+*.ass
+*.srt
