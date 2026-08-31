@@ -1675,6 +1675,12 @@ class BilibiliApp:
             padx=5
         )
 
+        ttk.Button(
+            button_frame,
+            text="Resume pending",
+            command=self.load_pending_tasks,
+        ).pack(side="left", padx=5)
+
         self.start_button = ttk.Button(
             button_frame,
             text="开始下载",
@@ -1877,6 +1883,17 @@ class BilibiliApp:
     # ========================================================
     # 开始下载
     # ========================================================
+
+    def load_pending_tasks(self):
+        """Load unfinished tasks from SQLite into the URL editor."""
+
+        pending = self.task_store.pending()
+        if not pending:
+            self.log("No unfinished tasks found")
+            return
+        self.url_text.delete("1.0", tk.END)
+        self.url_text.insert(tk.END, "\n".join(item["url"] for item in pending))
+        self.log(f"Loaded {len(pending)} unfinished tasks")
 
     def start_download(self):
 
