@@ -81,3 +81,11 @@ class TaskStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def recent(self, limit: int = 100):
+        limit = max(1, min(int(limit), 500))
+        with self._lock, self._connect() as db:
+            rows = db.execute(
+                "SELECT * FROM download_tasks "
+                "ORDER BY updated_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]

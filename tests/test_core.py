@@ -11,6 +11,7 @@ from app.metadata.writer import (
 from app.models import VideoInfo
 from app.url_parser import canonicalize_bilibili_url, parse_video_url
 from app.media.resolver import select_dash_streams, stream_urls
+from app.jobs.store import TaskStore
 import main
 
 
@@ -134,6 +135,17 @@ class DownloadRoutingTests(unittest.TestCase):
         self.assertEqual(
             seen, ["https://www.bilibili.com/video/BV1kkArz1EXq?p=7"]
         )
+
+
+class TaskStoreTests(unittest.TestCase):
+    def test_task_history_and_pending_queries(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = TaskStore(Path(temp) / "tasks.db")
+            store.upsert("https://example/video", "1080P", "PENDING")
+            self.assertEqual(len(store.pending()), 1)
+            store.upsert("https://example/video", "1080P", "COMPLETED")
+            self.assertEqual(store.pending(), [])
+            self.assertEqual(store.recent(1)[0]["status"], "COMPLETED")
 
 
 if __name__ == "__main__":

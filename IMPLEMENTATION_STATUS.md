@@ -16,15 +16,18 @@
 - 可用字幕自动保存为 SRT；
 - SQLite 任务历史和状态记录；
 - GUI 一键载入未完成任务；
+- GUI 最近任务历史窗口；
+- 独立 `app/parsers/bilibili.py` 官方 API 客户端；
+- 可用弹幕 XML 自动保存；
+- `build.ps1` Windows PyInstaller 打包脚本；
 - 7 项 URL、媒体、元数据和路由测试。
 
 ## 暂未完成
 
-- GUI 中的完整任务历史列表；
-- 弹幕下载和格式转换；
-- 完整的 Bilibili Parser 类独立化（当前 API 类仍在 `main.py`，共享 URL/媒体模块已建立）；
+- 弹幕格式转换（当前保存原始 XML）；
+- 清理 `main.py` 中已废弃的旧 API 类定义；
 - 多平台解析器；
-- Windows 最终打包脚本。
+- 在全新 Windows 环境执行最终打包验收。
 
 ## 当前验证命令
 

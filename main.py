@@ -19,6 +19,7 @@ import yt_dlp
 from app.models import VideoInfo
 from app.metadata.writer import save_subtitle_tracks, save_video_metadata
 from app.jobs.store import TaskStore
+from app.parsers.bilibili import BilibiliApiClient
 from app.url_parser import (
     canonicalize_bilibili_url as shared_canonicalize_bilibili_url,
     parse_video_url as shared_parse_video_url,
@@ -685,8 +686,10 @@ class BilibiliDownloader:
     def api(self):
 
         if self._api is None:
-            self._api = BilibiliWebApi(
+            self._api = BilibiliApiClient(
                 cookie_source=self.browser,
+                cookie_file=COOKIE_FILE,
+                headers=API_HEADERS,
                 log=self.log
             )
 
@@ -695,8 +698,10 @@ class BilibiliDownloader:
     def _reset_api(self):
         """Drop a possibly rate-limited session before retrying the API."""
 
-        self._api = BilibiliWebApi(
+        self._api = BilibiliApiClient(
             cookie_source=self.browser,
+            cookie_file=COOKIE_FILE,
+            headers=API_HEADERS,
             log=self.log
         )
 
@@ -914,6 +919,9 @@ class BilibiliDownloader:
             output_path, subtitle_tracks, self.api.session, API_HEADERS
         ):
             self.log(f"subtitle saved: {subtitle_path.name}")
+        danmaku_path = output_path.with_suffix(".xml")
+        if self.api.download_danmaku(page_info["cid"], danmaku_path):
+            self.log(f"danmaku saved: {danmaku_path.name}")
         self._embed_metadata(output_path, video_info)
 
         self.log(
@@ -1681,6 +1689,12 @@ class BilibiliApp:
             command=self.load_pending_tasks,
         ).pack(side="left", padx=5)
 
+        ttk.Button(
+            button_frame,
+            text="Task history",
+            command=self.show_task_history,
+        ).pack(side="left", padx=5)
+
         self.start_button = ttk.Button(
             button_frame,
             text="开始下载",
@@ -1894,6 +1908,29 @@ class BilibiliApp:
         self.url_text.delete("1.0", tk.END)
         self.url_text.insert(tk.END, "\n".join(item["url"] for item in pending))
         self.log(f"Loaded {len(pending)} unfinished tasks")
+
+    def show_task_history(self):
+        """Display recent persisted tasks without blocking the downloader."""
+
+        window = tk.Toplevel(self.root)
+        window.title("Task history")
+        window.geometry("900x360")
+        columns = ("status", "quality", "url", "updated", "error")
+        tree = ttk.Treeview(window, columns=columns, show="headings")
+        headings = {
+            "status": "Status", "quality": "Quality", "url": "URL",
+            "updated": "Updated", "error": "Error",
+        }
+        for column in columns:
+            tree.heading(column, text=headings[column])
+            tree.column(column, width=120 if column != "url" else 360)
+        tree.pack(fill="both", expand=True, padx=8, pady=8)
+        for item in self.task_store.recent():
+            tree.insert(
+                "", tk.END,
+                values=(item["status"], item["quality"], item["url"],
+                        item["updated_at"], item["error_message"] or ""),
+            )
 
     def start_download(self):
 
