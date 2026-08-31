@@ -15,3 +15,5 @@ urls.txt
 *.ass
 *.srt
 *.db
+build/
+dist/
