@@ -3,9 +3,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app.metadata.writer import metadata_paths, save_video_metadata
+from app.metadata.writer import (
+    metadata_paths,
+    save_subtitle_tracks,
+    save_video_metadata,
+)
 from app.models import VideoInfo
 from app.url_parser import canonicalize_bilibili_url, parse_video_url
+from app.media.resolver import select_dash_streams, stream_urls
 import main
 
 
@@ -25,6 +30,28 @@ class UrlParserTests(unittest.TestCase):
         self.assertEqual(
             parse_video_url("https://www.bilibili.com/video/av123"),
             (None, 123, 1),
+        )
+
+
+class StreamResolverTests(unittest.TestCase):
+    def test_selects_best_allowed_video_and_audio(self):
+        video, audio = select_dash_streams(
+            {
+                "video": [
+                    {"height": 720, "codecid": 7, "bandwidth": 100},
+                    {"height": 1080, "codecid": 7, "bandwidth": 200},
+                ],
+                "audio": [{"bandwidth": 50}, {"bandwidth": 100}],
+            },
+            720,
+        )
+        self.assertEqual(video["height"], 720)
+        self.assertEqual(audio["bandwidth"], 100)
+
+    def test_stream_urls_deduplicates_backup_addresses(self):
+        self.assertEqual(
+            stream_urls({"baseUrl": "a", "backupUrl": ["a", "b"]}),
+            ["a", "b"],
         )
 
 
@@ -64,6 +91,28 @@ class MetadataTests(unittest.TestCase):
             self.assertEqual(metadata_paths(output), (json_path, cover_path))
             self.assertEqual(json.loads(json_path.read_text())["title"], "Title")
             self.assertEqual(cover_path.read_bytes(), b"fake-jpeg")
+
+    def test_subtitle_track_is_written_as_srt(self):
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"body": [{"from": 0, "to": 1.25, "content": "hello"}]}
+
+        class FakeSession:
+            def get(self, *args, **kwargs):
+                return FakeResponse()
+
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "video.mp4"
+            paths = save_subtitle_tracks(
+                output,
+                [{"subtitle_url": "https://example.com/subtitle.json", "lan": "en"}],
+                FakeSession(),
+            )
+            self.assertEqual(len(paths), 1)
+            self.assertIn("00:00:00,000 --> 00:00:01,250", paths[0].read_text())
 
 
 class DownloadRoutingTests(unittest.TestCase):

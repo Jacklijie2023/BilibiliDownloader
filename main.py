@@ -17,7 +17,16 @@ import requests
 import yt_dlp
 
 from app.models import VideoInfo
-from app.metadata.writer import save_video_metadata
+from app.metadata.writer import save_subtitle_tracks, save_video_metadata
+from app.jobs.store import TaskStore
+from app.url_parser import (
+    canonicalize_bilibili_url as shared_canonicalize_bilibili_url,
+    parse_video_url as shared_parse_video_url,
+)
+from app.media.resolver import (
+    select_dash_streams as shared_select_dash_streams,
+    stream_urls as shared_stream_urls,
+)
 
 
 # ============================================================
@@ -158,6 +167,14 @@ def canonicalize_bilibili_url(url):
         return url
 
     return f"{base}?p={page}" if page > 1 else base
+
+
+# Keep the legacy names used throughout this file while making the extracted
+# module the single source of truth for URL parsing.
+parse_video_url = shared_parse_video_url
+canonicalize_bilibili_url = shared_canonicalize_bilibili_url
+select_dash_streams = shared_select_dash_streams
+stream_urls = shared_stream_urls
 
 
 def select_dash_streams(dash, max_height):
@@ -436,6 +453,24 @@ class BilibiliWebApi:
             "https://api.bilibili.com/x/web-interface/view",
             params=params
         )
+
+    def get_subtitle_tracks(self, aid, cid, bvid=None):
+        """Return subtitle descriptors when the account/API exposes them."""
+
+        params = {"aid": aid, "cid": cid}
+        if bvid:
+            params["bvid"] = bvid
+        try:
+            data = self._get_json(
+                "https://api.bilibili.com/x/player/wbi/v2",
+                params=params,
+                signed=True,
+            )
+            subtitle = data.get("subtitle") or {}
+            return subtitle.get("list") or []
+        except Exception as exc:
+            self.log(f"subtitle lookup skipped: {exc}")
+            return []
 
     def get_play_info(self, aid, cid, qn):
         """播放地址。优先走 wbi 签名接口，失败再退回旧接口。"""
@@ -874,6 +909,11 @@ class BilibiliDownloader:
         self.log(f"metadata saved: {metadata_json.name}")
         if cover_path:
             self.log(f"cover saved: {cover_path.name}")
+        subtitle_tracks = self.api.get_subtitle_tracks(aid, page_info["cid"], bvid)
+        for subtitle_path in save_subtitle_tracks(
+            output_path, subtitle_tracks, self.api.session, API_HEADERS
+        ):
+            self.log(f"subtitle saved: {subtitle_path.name}")
         self._embed_metadata(output_path, video_info)
 
         self.log(
@@ -1322,6 +1362,10 @@ class BilibiliApp:
         self.downloading = False
 
         self.stop_requested = False
+
+        # Persistent task history allows diagnostics and future resume UI
+        # without changing the existing Tkinter workflow.
+        self.task_store = TaskStore(BASE_DIR / "tasks.db")
 
         # UI
         self.create_ui()
@@ -1960,6 +2004,11 @@ class BilibiliApp:
             start=1
         ):
 
+            canonical_url = canonicalize_bilibili_url(url)
+            task_id = self.task_store.upsert(
+                canonical_url, quality, "PENDING"
+            )
+
             if self.stop_requested:
 
                 self.log(
@@ -1978,6 +2027,8 @@ class BilibiliApp:
                 f"=========="
             )
 
+            self.task_store.upsert(canonical_url, quality, "RESOLVING")
+
             result = (
                 downloader.download_one(
                     url
@@ -1987,10 +2038,16 @@ class BilibiliApp:
             if result:
 
                 success += 1
+                self.task_store.upsert(
+                    canonical_url, quality, "COMPLETED"
+                )
 
             else:
 
                 failed += 1
+                self.task_store.upsert(
+                    canonical_url, quality, "FAILED"
+                )
 
         self.log(
             ""

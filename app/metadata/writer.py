@@ -84,3 +84,53 @@ def save_video_metadata(
     except Exception:
         return json_path, None
 
+
+def save_subtitle_tracks(
+    output_path: Path,
+    tracks: list[dict[str, Any]],
+    session: requests.Session,
+    headers: dict[str, str] | None = None,
+) -> list[Path]:
+    """Download exposed subtitle tracks and write them as UTF-8 SRT files."""
+
+    saved: list[Path] = []
+    for index, track in enumerate(tracks, start=1):
+        url = track.get("subtitle_url") or track.get("url")
+        if not url:
+            continue
+        if url.startswith("//"):
+            url = "https:" + url
+        try:
+            response = session.get(url, headers=headers, timeout=(10, 30))
+            response.raise_for_status()
+            payload = response.json()
+            body = payload.get("body") or []
+            if not body:
+                continue
+            language = re.sub(
+                r"[^A-Za-z0-9_-]+", "_",
+                str(track.get("lan_doc") or track.get("lan") or index),
+            ).strip("_") or str(index)
+            path = output_path.with_name(
+                output_path.stem + f".{language}.srt"
+            )
+            lines = []
+            for number, item in enumerate(body, start=1):
+                start = _srt_time(item.get("from", 0))
+                end = _srt_time(item.get("to", item.get("from", 0)))
+                lines.extend((str(number), f"{start} --> {end}",
+                              str(item.get("content") or ""), ""))
+            path.write_text("\n".join(lines), encoding="utf-8")
+            saved.append(path)
+        except Exception:
+            continue
+    return saved
+
+
+def _srt_time(seconds: Any) -> str:
+    value = max(float(seconds or 0), 0.0)
+    millis = int(round(value * 1000))
+    hours, remainder = divmod(millis, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    secs, millis = divmod(remainder, 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
